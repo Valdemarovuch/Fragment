@@ -1,18 +1,36 @@
-import customtkinter as ctk
+"""
+Fragment - Data Corruption Tool
+Main entry point
+"""
+import webview
+import os
+from src.api.bridge import WebViewApi
 
-from config import AppConfig, setup_logging
-from gui import FileBreakerApp
+
+def load_html():
+    """Load HTML interface from file"""
+    html_path = os.path.join('src', 'ui', 'interface.html')
+    with open(html_path, 'r', encoding='utf-8') as f:
+        return f.read()
+
 
 def main():
-    """Точка входу в програму"""
+    """Launch the application"""
+    api = WebViewApi()
+    html_content = load_html()
     
-    # Налаштування теми
-    ctk.set_appearance_mode(AppConfig.APPEARANCE_MODE)
-    ctk.set_default_color_theme(AppConfig.COLOR_THEME)
+    window = webview.create_window(
+        'Fragment // Data Corruptor', 
+        html=html_content, 
+        js_api=api,
+        width=500, 
+        height=700,
+        resizable=False,
+        background_color='#050505'
+    )
     
-    # Запуск додатку
-    app = FileBreakerApp()
-    app.mainloop()
+    webview.start()
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     main()
