@@ -15,6 +15,12 @@ def setup_logging():
         ]
     )
 
+class OperationMode:
+    """Основний режим операції"""
+    CORRUPT = "Corrupt Files"
+    SECURE_DELETE = "Secure Delete"
+
+
 class CorruptionMode:
     """Режими пошкодження файлів"""
     FULL = "Full Destruction (Header + Noise + Truncate)"
@@ -22,6 +28,13 @@ class CorruptionMode:
     NOISE_ONLY = "Bit Flipping Only"
     TRUNCATE_ONLY = "Truncate Only"
     CUSTOM = "Custom"
+
+
+class DeletionMode:
+    """Режими безпечного видалення"""
+    STANDARD = "Standard (3 passes - DoD)"
+    EXTENDED = "Extended (7 passes - Gutmann)"
+    QUICK = "Quick (1 pass)"
 
 class AppConfig:
     """Налаштування додатку"""

@@ -14,8 +14,9 @@ import stat
 import tempfile
 import zipfile
 
-from config import CorruptionMode, AppConfig, NamingPattern
+from config import CorruptionMode, AppConfig, NamingPattern, OperationMode, DeletionMode
 from corruption_engine import CorruptionEngine
+from secure_delete import SecureShredder
 
 # Імпорт бібліотек для Office документів
 try:
@@ -58,12 +59,19 @@ class FileBreakerApp(ctk.CTk):
         self.selected_files = []
         self.file_rows = {}
         
-        # Параметри
+        # Параметри операції
+        self.operation_mode = tk.StringVar(value=OperationMode.CORRUPT)
+        
+        # Параметри корупції
         self.corruption_mode = tk.StringVar(value=CorruptionMode.FULL)
         self.output_directory = tk.StringVar(value="")
         self.custom_header_bytes = tk.IntVar(value=16)
         self.custom_noise_count = tk.IntVar(value=5)
         self.custom_truncate_bytes = tk.IntVar(value=30)
+        
+        # Параметри безпечного видалення
+        self.deletion_mode = tk.StringVar(value=DeletionMode.STANDARD)
+        self.deletion_passes = tk.IntVar(value=3)
         
         # Налаштування імен файлів
         self.naming_pattern = tk.StringVar(value=NamingPattern.SAME)
@@ -146,7 +154,7 @@ class FileBreakerApp(ctk.CTk):
     
     def _create_footer(self):
         """Створення підвалу з налаштуваннями"""
-        footer_frame = ctk.CTkFrame(self, height=160, corner_radius=0, fg_color="#111111")
+        footer_frame = ctk.CTkFrame(self, height=200, corner_radius=0, fg_color="#111111")
         footer_frame.pack(fill="x", side="bottom")
         
         # Прогрес-бар
@@ -161,12 +169,31 @@ class FileBreakerApp(ctk.CTk):
         settings_frame = ctk.CTkFrame(footer_inner, fg_color="transparent")
         settings_frame.pack(side="left", fill="both", expand=True)
         
-        # Перший рядок - режим corruption
-        ctk.CTkLabel(settings_frame, text="Corruption Mode:", text_color="gray",
+        # ПЕРШИЙ РЯДОК - Вибір операції (Corrupt vs Secure Delete)
+        operation_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        operation_frame.pack(anchor="w", fill="x", pady=(0, 10))
+        
+        ctk.CTkLabel(operation_frame, text="Operation:", text_color="gray",
+                    font=("Roboto", 11)).pack(side="left")
+        
+        self.operation_menu = ctk.CTkOptionMenu(
+            operation_frame,
+            variable=self.operation_mode,
+            values=[OperationMode.CORRUPT, OperationMode.SECURE_DELETE],
+            width=200,
+            command=self.on_operation_change
+        )
+        self.operation_menu.pack(side="left", padx=(10, 20))
+        
+        # ДРУГИЙ РЯДОК - режим corruption (видимо лише для CORRUPT)
+        self.corruption_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        self.corruption_frame.pack(anchor="w", fill="x", pady=(0, 10))
+        
+        ctk.CTkLabel(self.corruption_frame, text="Corruption Mode:", text_color="gray",
                     font=("Roboto", 11)).pack(anchor="w")
         
-        mode_menu = ctk.CTkOptionMenu(
-            settings_frame,
+        self.corruption_mode_menu = ctk.CTkOptionMenu(
+            self.corruption_frame,
             variable=self.corruption_mode,
             values=[CorruptionMode.FULL, CorruptionMode.HEADER_ONLY, 
                    CorruptionMode.NOISE_ONLY, CorruptionMode.TRUNCATE_ONLY, 
@@ -174,9 +201,43 @@ class FileBreakerApp(ctk.CTk):
             width=300,
             command=self.on_mode_change
         )
-        mode_menu.pack(anchor="w", pady=(5, 10))
+        self.corruption_mode_menu.pack(anchor="w", pady=(5, 0))
         
-        # Другий рядок - naming pattern
+        # ТРЕТІЙ РЯДОК - режим безпечного видалення (видимо лише для SECURE_DELETE)
+        self.deletion_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        self.deletion_frame.pack(anchor="w", fill="x", pady=(0, 10))
+        
+        deletion_row1 = ctk.CTkFrame(self.deletion_frame, fg_color="transparent")
+        deletion_row1.pack(anchor="w", fill="x")
+        
+        ctk.CTkLabel(deletion_row1, text="Deletion Mode:", text_color="gray",
+                    font=("Roboto", 11)).pack(side="left")
+        
+        self.deletion_mode_menu = ctk.CTkOptionMenu(
+            deletion_row1,
+            variable=self.deletion_mode,
+            values=[DeletionMode.QUICK, DeletionMode.STANDARD, DeletionMode.EXTENDED],
+            width=200,
+            command=self.on_deletion_mode_change
+        )
+        self.deletion_mode_menu.pack(side="left", padx=(10, 20))
+        
+        # Контроль для кількості проходів
+        ctk.CTkLabel(deletion_row1, text="Passes:", text_color="gray",
+                    font=("Roboto", 11)).pack(side="left", padx=(10, 0))
+        
+        self.deletion_passes_spinbox = ctk.CTkSpinbox(
+            deletion_row1,
+            from_=1, to=35,
+            variable=self.deletion_passes,
+            width=60
+        )
+        self.deletion_passes_spinbox.pack(side="left", padx=(5, 0))
+        
+        # Приховуємо deletion frame за замовчуванням
+        self.deletion_frame.pack_forget()
+        
+        # ЧЕТВЕРТИЙ РЯДОК - naming pattern
         naming_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
         naming_frame.pack(fill="x", pady=(0, 10))
         
@@ -197,17 +258,17 @@ class FileBreakerApp(ctk.CTk):
         self.prefix_entry = ctk.CTkEntry(naming_frame, placeholder_text="Prefix", width=80)
         self.suffix_entry = ctk.CTkEntry(naming_frame, placeholder_text="Suffix", width=80)
         
-        # Третій рядок - вибір output папки
-        output_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        output_frame.pack(fill="x")
+        # П'ЯТИ РЯДОК - вибір output папки (лише для CORRUPT)
+        self.output_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        self.output_frame.pack(fill="x")
         
-        ctk.CTkLabel(output_frame, text="Output:", text_color="gray",
+        ctk.CTkLabel(self.output_frame, text="Output:", text_color="gray",
                     font=("Roboto", 11)).pack(side="left")
-        self.lbl_output = ctk.CTkLabel(output_frame, text="Same as original",
+        self.lbl_output = ctk.CTkLabel(self.output_frame, text="Same as original",
                                       text_color="#00aaff", font=("Roboto", 10))
         self.lbl_output.pack(side="left", padx=(5, 10))
         
-        btn_output = ctk.CTkButton(output_frame, text="Change", width=80, height=25,
+        btn_output = ctk.CTkButton(self.output_frame, text="Change", width=80, height=25,
                                   fg_color="transparent", border_width=1, border_color="gray",
                                   command=self.select_output_directory)
         btn_output.pack(side="left")
@@ -340,8 +401,50 @@ class FileBreakerApp(ctk.CTk):
             self.lbl_output.configure(text="Same as original")
     
     def on_mode_change(self, choice):
-        """Обробка зміни режиму"""
+        """Обробка зміни режиму corruption"""
         logging.info(f"Corruption mode changed to: {choice}")
+    
+    def on_deletion_mode_change(self, choice):
+        """Обробка зміни режиму безпечного видалення"""
+        # Автоматично встановлюємо кількість проходів на основі режиму
+        if choice == DeletionMode.QUICK:
+            self.deletion_passes.set(1)
+        elif choice == DeletionMode.STANDARD:
+            self.deletion_passes.set(3)
+        elif choice == DeletionMode.EXTENDED:
+            self.deletion_passes.set(7)
+        logging.info(f"Deletion mode changed to: {choice} ({self.deletion_passes.get()} passes)")
+    
+    def on_operation_change(self, choice):
+        """Обробка зміни режиму операції (Corrupt vs Secure Delete)"""
+        if choice == OperationMode.CORRUPT:
+            # Показуємо controls для corruption
+            self.corruption_frame.pack(anchor="w", fill="x", pady=(0, 10), after=self.operation_menu.master)
+            self.output_frame.pack(fill="x", after=self.naming_menu.master)
+            self.naming_menu.pack()
+            
+            # Приховуємо controls для deletion
+            self.deletion_frame.pack_forget()
+            
+            # Оновлюємо кнопку запуску
+            self.btn_run.configure(text="Corrupt All →")
+        
+        elif choice == OperationMode.SECURE_DELETE:
+            # Приховуємо controls для corruption
+            self.corruption_frame.pack_forget()
+            self.output_frame.pack_forget()
+            
+            # Показуємо controls для deletion
+            self.deletion_frame.pack(anchor="w", fill="x", pady=(0, 10), 
+                                     after=self.operation_menu.master)
+            
+            # Приховуємо naming pattern для delete режиму
+            self.naming_menu.pack_forget()
+            
+            # Оновлюємо кнопку запуску
+            self.btn_run.configure(text="Secure Delete →")
+        
+        logging.info(f"Operation mode changed to: {choice}")
     
     def on_naming_change(self, choice):
         """Обробка зміни шаблону імен"""
@@ -773,7 +876,7 @@ class FileBreakerApp(ctk.CTk):
     # --- ОБРОБКА ФАЙЛІВ ---
     
     def start_corruption_thread(self):
-        """Запуск процесу пошкодження у окремому потоці"""
+        """Запуск процесу в окремому потоці (corruption або secure delete)"""
         if not self.selected_files:
             messagebox.showwarning("Warning", "No files added!")
             return
@@ -781,13 +884,22 @@ class FileBreakerApp(ctk.CTk):
         self.btn_run.configure(state="disabled", text="Processing...")
         self.progress_bar.set(0)
         
-        logging.info(f"Starting corruption process for {len(self.selected_files)} files")
-        logging.info(f"Mode: {self.corruption_mode.get()}")
+        operation = self.operation_mode.get()
+        logging.info(f"Starting {operation} for {len(self.selected_files)} files")
         
         threading.Thread(target=self.process_files, daemon=True).start()
     
     def process_files(self):
         """Обробка файлів (виконується в окремому потоці)"""
+        operation = self.operation_mode.get()
+        
+        if operation == OperationMode.CORRUPT:
+            self.process_corruption()
+        elif operation == OperationMode.SECURE_DELETE:
+            self.process_secure_delete()
+    
+    def process_corruption(self):
+        """Обробка corruption режиму"""
         total = len(self.selected_files)
         step = 1 / total if total > 0 else 0
         current_progress = 0
@@ -882,14 +994,144 @@ class FileBreakerApp(ctk.CTk):
         # Завершення
         self.after(0, self.on_processing_complete, success_count, error_count)
     
+    def process_secure_delete(self):
+        """Обробка secure delete режиму"""
+        total = len(self.selected_files)
+        step = 1 / total if total > 0 else 0
+        current_progress = 0
+        
+        success_count = 0
+        error_count = 0
+        
+        # Скидання статистики
+        self.total_stats = {
+            'total_files': 0,
+            'total_bytes_changed': 0,
+            'total_time': 0.0,
+            'original_total_size': 0,
+            'corrupted_total_size': 0
+        }
+        
+        # Створення SecureShredder з параметрами користувача
+        passes = self.deletion_passes.get()
+        shredder = SecureShredder(passes=passes)
+        
+        logging.info(f"Starting secure deletion with {passes} passes")
+        
+        for file_path in self.selected_files:
+            try:
+                # Оновлення статусу
+                self.after(0, self.update_file_status, file_path, "Shredding...", 
+                          AppConfig.COLOR_PROCESSING)
+                
+                # Запуск безпечного видалення
+                stats = shredder.shred_file(file_path)
+                
+                # Оновлення загальної статистики
+                if stats.success:
+                    self.total_stats['total_files'] += 1
+                    self.total_stats['total_time'] += stats.processing_time
+                    self.total_stats['original_total_size'] += stats.file_size
+                    
+                    success_count += 1
+                    
+                    # Детальна інформація у статусі
+                    status_text = f"✓ {stats.processing_time:.2f}s"
+                    self.after(0, self.update_file_status, file_path, status_text, 
+                              AppConfig.COLOR_SUCCESS)
+                    
+                    logging.info(f"Successfully shredded: {file_path} | "
+                               f"Size: {self.format_file_size(stats.file_size)} | "
+                               f"Time: {stats.processing_time:.3f}s")
+                else:
+                    error_count += 1
+                    self.after(0, self.update_file_status, file_path, "Failed", 
+                              AppConfig.COLOR_ERROR)
+                    logging.error(f"Failed to shred: {file_path}")
+            
+            except PermissionError as e:
+                error_count += 1
+                self.after(0, self.update_file_status, file_path, "Access Denied", 
+                          AppConfig.COLOR_ERROR)
+                logging.error(f"Permission denied: {file_path} - {e}")
+            
+            except IOError as e:
+                error_count += 1
+                self.after(0, self.update_file_status, file_path, "I/O Error", 
+                          AppConfig.COLOR_ERROR)
+                logging.error(f"I/O error: {file_path} - {e}")
+            
+            except Exception as e:
+                error_count += 1
+                self.after(0, self.update_file_status, file_path, "Error", 
+                          AppConfig.COLOR_WARNING)
+                logging.error(f"Unexpected error: {file_path}: {e}", exc_info=True)
+            
+            current_progress += step
+            self.after(0, self.progress_bar.set, current_progress)
+        
+        # Завершення
+        self.after(0, self.on_processing_complete_delete, success_count, error_count)
+    
     def update_file_status(self, file_path, status_text, color):
         """Оновлення статусу файлу"""
         if file_path in self.file_rows:
             self.file_rows[file_path].status_label.configure(text=status_text, text_color=color)
     
     def on_processing_complete(self, success_count, error_count):
-        """Завершення обробки"""
+        """Завершення обробки (corruption)"""
         self.btn_run.configure(state="normal", text="Corrupt All →")
+        
+        # Формування детального звіту
+        stats = self.total_stats
+        avg_time = stats['total_time'] / stats['total_files'] if stats['total_files'] > 0 else 0
+        size_diff = stats['original_total_size'] - stats['corrupted_total_size']
+        
+        message = f"Processing complete!\n\n"
+        message += f"✓ Success: {success_count}\n"
+        message += f"✗ Errors: {error_count}\n\n"
+        message += f"📊 Statistics:\n"
+        message += f"• Total bytes changed: {self.format_file_size(stats['total_bytes_changed'])}\n"
+        message += f"• Original size: {self.format_file_size(stats['original_total_size'])}\n"
+        message += f"• Corrupted size: {self.format_file_size(stats['corrupted_total_size'])}\n"
+        message += f"• Size reduced: {self.format_file_size(size_diff)}\n"
+        message += f"• Total time: {stats['total_time']:.2f}s\n"
+        message += f"• Avg per file: {avg_time:.3f}s"
+        
+        if error_count == 0:
+            message += "\n\n✅ All files processed successfully!"
+        
+        logging.info(f"Processing complete: {success_count} success, {error_count} errors")
+        logging.info(f"Statistics: {stats['total_bytes_changed']} bytes changed, "
+                    f"{stats['total_time']:.2f}s total, {avg_time:.3f}s avg")
+        
+        messagebox.showinfo("Done", message)
+    
+    def on_processing_complete_delete(self, success_count, error_count):
+        """Завершення обробки (secure delete)"""
+        self.btn_run.configure(state="normal", text="Secure Delete →")
+        
+        # Формування детального звіту
+        stats = self.total_stats
+        avg_time = stats['total_time'] / stats['total_files'] if stats['total_files'] > 0 else 0
+        
+        message = f"Secure deletion complete!\n\n"
+        message += f"✓ Success: {success_count}\n"
+        message += f"✗ Errors: {error_count}\n\n"
+        message += f"📊 Statistics:\n"
+        message += f"• Total files deleted: {stats['total_files']}\n"
+        message += f"• Total data wiped: {self.format_file_size(stats['original_total_size'])}\n"
+        message += f"• Total time: {stats['total_time']:.2f}s\n"
+        message += f"• Avg per file: {avg_time:.3f}s"
+        
+        if error_count == 0:
+            message += "\n\n✅ All files securely deleted!"
+        
+        logging.info(f"Secure deletion complete: {success_count} success, {error_count} errors")
+        logging.info(f"Statistics: {self.format_file_size(stats['original_total_size'])} deleted, "
+                    f"{stats['total_time']:.2f}s total")
+        
+        messagebox.showinfo("Done", message)
         
         # Формування детального звіту
         stats = self.total_stats

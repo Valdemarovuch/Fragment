@@ -1,11 +1,7 @@
-"""
-Модуль для пошкодження файлів
-"""
 import os
 import random
 import logging
 import time
-
 
 class CorruptionStats:
     """Статистика операції пошкодження"""
@@ -17,7 +13,6 @@ class CorruptionStats:
         self.noise_bytes = 0
         self.truncated_bytes = 0
         self.processing_time = 0.0
-
 
 class CorruptionEngine:
     """Двигун для пошкодження файлів"""
