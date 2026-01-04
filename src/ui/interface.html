@@ -212,16 +212,20 @@
 				if (paths && paths.length > 0) {
 					selectedFiles = paths
 					const count = paths.length
-					
+
 					if (count === 1) {
 						const filename = paths[0].split(/[\\\\/]/).pop()
 						document.getElementById('fileNameDisplay').innerText = filename
 						document.getElementById('filePathDisplay').innerText = paths[0]
 					} else {
-						document.getElementById('fileNameDisplay').innerText = `${count} files selected`
-						document.getElementById('filePathDisplay').innerText = paths.map(p => p.split(/[\\\\/]/).pop()).join(', ')
+						document.getElementById(
+							'fileNameDisplay'
+						).innerText = `${count} files selected`
+						document.getElementById('filePathDisplay').innerText = paths
+							.map(p => p.split(/[\\\\/]/).pop())
+							.join(', ')
 					}
-					
+
 					document.getElementById('fileNameDisplay').classList.add('text-white')
 					log(`${count} target(s) locked`, 'succ')
 					document.getElementById('status-light').className =
@@ -247,11 +251,14 @@
 				for (let i = 0; i < selectedFiles.length; i++) {
 					const filePath = selectedFiles[i]
 					const filename = filePath.split(/[\\\\/]/).pop()
-					
+
 					log(`[${i + 1}/${selectedFiles.length}] ${filename}...`, 'proc')
 
 					try {
-						const result = await window.pywebview.api.corrupt_file(filePath, safety)
+						const result = await window.pywebview.api.corrupt_file(
+							filePath,
+							safety
+						)
 
 						if (result.success) {
 							log(`✓ ${filename}`, 'succ')
@@ -266,8 +273,11 @@
 					}
 				}
 
-				log(`Completed: ${successCount} success, ${failCount} failed`, successCount > 0 ? 'succ' : 'err')
-				
+				log(
+					`Completed: ${successCount} success, ${failCount} failed`,
+					successCount > 0 ? 'succ' : 'err'
+				)
+
 				generateBtn.disabled = false
 				document.getElementById('btnText').innerText = 'Generate Fragment'
 				document.getElementById('status-light').className =
