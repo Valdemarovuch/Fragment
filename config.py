@@ -36,7 +36,7 @@ class AppConfig:
     COLOR_THEME = "dark-blue"
     
     # Налаштування UI
-    HEADER_TEXT = "PRISM CORRUPTOR"
+    HEADER_TEXT = "FRAGMENT"
     
     # Кольори статусів
     COLOR_READY = "cyan"
