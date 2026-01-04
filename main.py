@@ -20,7 +20,7 @@ def main():
     html_content = load_html()
     
     window = webview.create_window(
-        'Fragment // Data Corruptor', 
+        'Fragment', 
         html=html_content, 
         js_api=api,
         width=500, 

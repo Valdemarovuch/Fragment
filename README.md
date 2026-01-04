@@ -1,4 +1,4 @@
-# FRAGMENT // Digital Decay Engine
+# FRAGMENT
 
 ![Version](https://img.shields.io/badge/version-2.0.0-orange?style=for-the-badge) ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge) ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge) ![Status](https://img.shields.io/badge/Status-Active-red?style=for-the-badge)
 
