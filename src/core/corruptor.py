@@ -3,6 +3,11 @@ Core corruption engine - handles file manipulation and corruption logic
 """
 import os
 import random
+import shutil
+import stat
+import subprocess
+import platform
+from datetime import datetime
 
 
 class FileCorruptor:
@@ -60,8 +65,45 @@ class FileCorruptor:
                     f_dst.write(os.urandom(current_chunk))
                     written += current_chunk
 
-            # Timestomping - copy original timestamps
+            # METADATA CLONING - copy all file attributes
+            
+            # 1. Copy birthtime (creation time) on macOS - MUST BE FIRST
+            if platform.system() == 'Darwin' and hasattr(stats, 'st_birthtime'):
+                try:
+                    birth_dt = datetime.fromtimestamp(stats.st_birthtime)
+                    # Format: MM/DD/YYYY HH:MM:SS
+                    birth_str = birth_dt.strftime('%m/%d/%Y %H:%M:%S')
+                    subprocess.run(
+                        ['SetFile', '-d', birth_str, new_path],
+                        check=True,
+                        capture_output=True
+                    )
+                except (subprocess.SubprocessError, OSError, ValueError) as e:
+                    pass  # Silently continue if SetFile fails
+            
+            # 2. Copy timestamps (atime, mtime) - AFTER birthtime
             os.utime(new_path, (stats.st_atime, stats.st_mtime))
+            
+            # 3. Copy file permissions
+            os.chmod(new_path, stat.S_IMODE(stats.st_mode))
+            
+            # 4. Copy owner and group (only works with proper permissions)
+            try:
+                os.chown(new_path, stats.st_uid, stats.st_gid)
+            except (PermissionError, OSError, AttributeError):
+                pass
+            
+            # 5. Copy extended attributes (macOS/Linux)
+            try:
+                if hasattr(os, 'listxattr'):
+                    for attr in os.listxattr(file_path):
+                        try:
+                            value = os.getxattr(file_path, attr)
+                            os.setxattr(new_path, attr, value)
+                        except (OSError, IOError):
+                            pass
+            except (AttributeError, OSError):
+                pass
             
             return {'success': True, 'new_path': new_path}
 

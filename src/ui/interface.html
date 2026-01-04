@@ -107,10 +107,10 @@
 								id="fileNameDisplay"
 								class="text-sm font-medium text-neutral-300 group-hover:text-white transition-colors"
 							>
-								Click to select file
+								Click to select files
 							</p>
 							<p class="text-xs text-neutral-500 mt-1" id="filePathDisplay">
-								Waiting for selection...
+								Multiple files supported...
 							</p>
 						</div>
 					</div>
@@ -184,7 +184,7 @@
 			const terminal = document.getElementById('terminal')
 			const uploadZone = document.getElementById('uploadZone')
 			const generateBtn = document.getElementById('generateBtn')
-			let currentFilePath = null
+			let selectedFiles = []
 
 			function log(msg, type = 'normal') {
 				const div = document.createElement('div')
@@ -207,16 +207,23 @@
 
 			uploadZone.addEventListener('click', async () => {
 				log('Opening system dialog...', 'proc')
-				const path = await window.pywebview.api.pick_file()
+				const paths = await window.pywebview.api.pick_file()
 
-				if (path) {
-					currentFilePath = path
-					const filename = path.split(/[\\\\/]/).pop()
-					document.getElementById('fileNameDisplay').innerText = filename
+				if (paths && paths.length > 0) {
+					selectedFiles = paths
+					const count = paths.length
+					
+					if (count === 1) {
+						const filename = paths[0].split(/[\\\\/]/).pop()
+						document.getElementById('fileNameDisplay').innerText = filename
+						document.getElementById('filePathDisplay').innerText = paths[0]
+					} else {
+						document.getElementById('fileNameDisplay').innerText = `${count} files selected`
+						document.getElementById('filePathDisplay').innerText = paths.map(p => p.split(/[\\\\/]/).pop()).join(', ')
+					}
+					
 					document.getElementById('fileNameDisplay').classList.add('text-white')
-					document.getElementById('filePathDisplay').innerText = path
-
-					log(`Target locked: ${filename}`, 'succ')
+					log(`${count} target(s) locked`, 'succ')
 					document.getElementById('status-light').className =
 						'w-2 h-2 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.4)]'
 				} else {
@@ -225,34 +232,46 @@
 			})
 
 			generateBtn.addEventListener('click', async () => {
-				if (!currentFilePath) return log('Error: No target selected.', 'err')
+				if (!selectedFiles || selectedFiles.length === 0) {
+					return log('Error: No targets selected.', 'err')
+				}
 
 				generateBtn.disabled = true
 				document.getElementById('btnText').innerText = 'Corrupting...'
-				log('Initializing corruption sequence...', 'proc')
+				log(`Processing ${selectedFiles.length} file(s)...`, 'proc')
 
 				const safety = document.getElementById('safetyToggle').checked
+				let successCount = 0
+				let failCount = 0
 
-				try {
-					const result = await window.pywebview.api.corrupt_file(
-						currentFilePath,
-						safety
-					)
+				for (let i = 0; i < selectedFiles.length; i++) {
+					const filePath = selectedFiles[i]
+					const filename = filePath.split(/[\\\\/]/).pop()
+					
+					log(`[${i + 1}/${selectedFiles.length}] ${filename}...`, 'proc')
 
-					if (result.success) {
-						log(`Success! Saved to:`, 'succ')
-						log(result.new_path, 'succ')
-					} else {
-						log(`Error: ${result.error}`, 'err')
+					try {
+						const result = await window.pywebview.api.corrupt_file(filePath, safety)
+
+						if (result.success) {
+							log(`✓ ${filename}`, 'succ')
+							successCount++
+						} else {
+							log(`✗ ${filename}: ${result.error}`, 'err')
+							failCount++
+						}
+					} catch (e) {
+						log(`✗ ${filename}: ${e}`, 'err')
+						failCount++
 					}
-				} catch (e) {
-					log(`Critical Failure: ${e}`, 'err')
-				} finally {
-					generateBtn.disabled = false
-					document.getElementById('btnText').innerText = 'Generate Fragment'
-					document.getElementById('status-light').className =
-						'w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]'
 				}
+
+				log(`Completed: ${successCount} success, ${failCount} failed`, successCount > 0 ? 'succ' : 'err')
+				
+				generateBtn.disabled = false
+				document.getElementById('btnText').innerText = 'Generate Fragment'
+				document.getElementById('status-light').className =
+					'w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]'
 			})
 		</script>
 	</body>

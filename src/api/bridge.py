@@ -12,12 +12,12 @@ class WebViewApi:
         self.corruptor = FileCorruptor()
     
     def pick_file(self):
-        """Open native file dialog and return selected file path"""
+        """Open native file dialog and return selected file path(s)"""
         result = webview.windows[0].create_file_dialog(
             webview.OPEN_DIALOG, 
-            allow_multiple=False
+            allow_multiple=True
         )
-        return result[0] if result else None
+        return result if result else None
     
     def corrupt_file(self, file_path, safety_mode):
         """
