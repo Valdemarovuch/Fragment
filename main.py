@@ -1,18 +1,12 @@
-"""
-Fragment - Data Corruption Tool
-Main entry point
-"""
 import webview
 import os
 from src.api.bridge import WebViewApi
-
 
 def load_html():
     """Load HTML interface from file"""
     html_path = os.path.join('src', 'ui', 'interface.html')
     with open(html_path, 'r', encoding='utf-8') as f:
         return f.read()
-
 
 def main():
     """Launch the application"""
@@ -30,7 +24,6 @@ def main():
     )
     
     webview.start()
-
 
 if __name__ == '__main__':
     main()
